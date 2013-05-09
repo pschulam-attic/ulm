@@ -40,10 +40,27 @@ class TokenLM(object):
     def predict(self, hist):
         predictions = {}
         for w in self.vocab:
-            logp = list(self.lm.full_scores(hist + w))[-2][0]
-            predictions[w + ' '] = logp
+            if w == self.eos:
+                logp = list(self.lm.full_scores(hist.strip()))[-1][0]
+                predictions[self.eos] = logp
+            else:
+                logp = list(self.lm.full_scores(hist + w))[-2][0]
+                predictions[w + ' '] = logp
 
         return predictions
 
     def __repr__(self):
         return 'TokenLM(lm={}, vocab={})'.format(self.lm_file, self.vocab_file)
+
+
+
+
+
+
+
+
+
+
+
+
+

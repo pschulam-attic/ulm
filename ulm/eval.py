@@ -47,14 +47,15 @@ def evaluate2(lm, test_data):
     
     while len(histories) > 0:
         start, hist = heapq.heappop(histories)
+        if start >= len(test_data):
+            continue
 
-        if start < len(test_data):
-            predictions = lm.predict(hist)
-            for pred, log_p in get_consistent_predictions(predictions, test_data[start:]):
-                end = start + len(pred)
-                incoming_edges[nodes[end]].add(Edge(start, end, log_p))
-                new_hist = hist + pred
-                heapq.heappush(histories, (len(new_hist), new_hist))
+        predictions = lm.predict(hist)
+        for pred, log_p in get_consistent_predictions(predictions, test_data[start:]):
+            end = start + len(pred)
+            incoming_edges[nodes[end]].add(Edge(start, end, log_p))
+            new_hist = hist + pred
+            heapq.heappush(histories, (len(new_hist), new_hist))
 
     node_score = forward(nodes, incoming_edges, log_prob_semiring)
     return node_score[nodes[-1]] + lm.predict(test_data)[lm.eos]
@@ -78,7 +79,10 @@ def main():
     logging.info('Testing on %d sentences', len(test_data))
     for i, sentence in enumerate(test_data):
         logging.info('\n%s', sentence)
-        ll = evaluate1(lm, sentence)
+        logging.info('%d characters', len(sentence))
+        if args.token:
+            sentence = sentence + ' '
+        ll = evaluate2(lm, sentence)
         logging.info('LL= %.3f', ll)
 
 
