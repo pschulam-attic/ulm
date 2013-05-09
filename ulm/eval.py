@@ -1,68 +1,67 @@
+import argparse
 import heapq
-import kenlm
+import logging
+import math
+import sys
+from ulm.models import CharLM, TokenLM
 
-class Evaluator(object):
-    def __init__(self, test_data):
-        self.test_data = test_data
-    
-    def evaluate(self, lm):
-        assert hasattr(lm, 'predict')
-
-        log_likelihoods = [-float('inf')] * (len(self.test_data)+1)
-
-        hist_heap = []
-        heapq.heappush(hist_heap, (0, ''))
-
-        while len(hist_heap) > 0:
-            i, hist = heapq.heappop(hist_heap)
-            if i < len(self.test_data):
-                log_likelihoods[i] = lm.predict(hist)[self.test_data[i]]
-                new_hist = hist + self.test_data[i]
-                heapq.heappush(hist_heap, (len(new_hist), new_hist))
-        log_likelihoods[-1] = lm.predict(self.test_data)[lm.eos]
-
-        # for i in xrange(len(self.test_data)):
-        #     hist = self.test_data[:i]
-        #     log_likelihoods[i] = lm.predict(hist)[self.test_data[i]]
-        # log_likelihoods[-1] = lm.predict(self.test_data)[lm.eos]
-
-        return sum(log_likelihoods)
+def log_add(*ps):
+    m = max(ps)
+    return m + math.log10(sum(10 ** (p - m) for p in ps))
 
 
-class CharLM(object):
-    def __init__(self, lm_file, vocab_file, eos='</s>'):
-        self.lm = kenlm.LanguageModel(lm_file)
-        self.vocab = set(l.strip() for l in open(vocab_file))
-        self.eos = eos
-
-    def predict(self, hist):
-        mod_hist = []
-        for c in hist:
-            if c == ' ':
-                mod_hist.append('<space>')
-            else:
-                mod_hist.append(c)
-
-        predictions = {}
-        for w in self.vocab:
-            hist = ' '.join(mod_hist + [w])
-            logp = list(self.lm.full_scores(hist))[-2][0]
-            w = ' ' if w == '<space>' else w
-            predictions[w] = logp
-
-        return predictions
+def get_consistent_predictions(predictions, suffix):
+    for pred, log_p in predictions.iteritems():
+        if suffix.startswith(pred):
+            yield pred, log_p
 
 
-class TokenLM(object):
-    def __init__(self, lm_file, vocab_file, eos='</s>'):
-        self.lm = kenlm.LanguageModel(lm_file)
-        self.vocab = set(l.strip() for l in open(vocab_file) if l.strip())
-        self.eos = eos
+def evaluate1(lm, test_data):
+    assert hasattr(lm, 'predict')
 
-    def predict(self, hist):
-        predictions = {}
-        for w in self.vocab:
-            logp = list(self.lm.full_scores(hist + w))[-2][0]
-            predictions[w] = logp
+    log_likelihoods = [-float('inf')] * (len(test_data)+2)
+    log_likelihoods[0] = 0.0
+    histories = []
+    heapq.heappush(histories, (0, ''))
 
-        return predictions
+    while len(histories) > 0:
+        s, hist = heapq.heappop(histories)
+        logging.debug('Pop (%d, %s)', s, hist)
+        
+        if s < len(test_data):
+            predictions = lm.predict(hist)
+            for pred, log_p in get_consistent_predictions(predictions, test_data[s:]):
+                e = s + len(pred)
+                log_likelihoods[e] = log_add(log_likelihoods[e], log_p)
+                logging.debug('\tP( %s | .... %s )= %.3f', pred, hist[-5:], log_p)
+                new_hist = hist + pred
+                heapq.heappush(histories, (len(new_hist), new_hist))
+
+    log_likelihoods[-1] = lm.predict(test_data)[lm.eos]
+    return sum(log_likelihoods)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--token', help='Use a token language model', action='store_true')
+    parser.add_argument('--lm', help='Load this language model file')
+    parser.add_argument('--vocab', help='Use this vocabulary')
+    parser.add_argument('--debug', help='Verbose output', action='store_true')
+    args = parser.parse_args()
+
+    level = logging.DEBUG if args.debug else logging.INFO
+    logging.basicConfig(level=level, format='%(message)s')
+
+    LanguageModel = TokenLM if args.token else CharLM
+    lm = LanguageModel(args.lm, args.vocab)
+    logging.info('Evaluating %s', lm)
+    test_data = [l.strip() for l in sys.stdin]
+    logging.info('Testing on %d sentences', len(test_data))
+    for i, sentence in enumerate(test_data):
+        logging.info('\n%s', sentence)
+        ll = evaluate1(lm, sentence)
+        logging.info('LL= %.3f', ll)
+
+
+if __name__ == '__main__':
+    main()
