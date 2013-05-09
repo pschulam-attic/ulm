@@ -39,3 +39,4 @@ char.lm
 token.lm
 char_vocab.txt
 token_vocab.txt
+Makefile
