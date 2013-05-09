@@ -1,16 +1,10 @@
 import argparse
 import heapq
 import logging
-import math
 import sys
 from collections import defaultdict
 from ulm.models import CharLM, TokenLM
-from ulm.viterbi import Edge
-
-
-def log_add(*ps):
-    m = max(ps)
-    return m + math.log10(sum(10 ** (p - m) for p in ps))
+from ulm.viterbi import log_add, Edge, log_prob_semiring, forward
 
 
 def get_consistent_predictions(predictions, suffix):
@@ -62,7 +56,8 @@ def evaluate2(lm, test_data):
                 new_hist = hist + pred
                 heapq.heappush(histories, (len(new_hist), new_hist))
 
-    return nodes, incoming_edges
+    node_score = forward(nodes, incoming_edges, log_prob_semiring)
+    return node_score[nodes[-1]] + lm.predict(test_data)[lm.eos]
 
 
 def main():
