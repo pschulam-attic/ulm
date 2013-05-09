@@ -3,7 +3,10 @@ import heapq
 import logging
 import math
 import sys
+from collections import defaultdict
 from ulm.models import CharLM, TokenLM
+from ulm.viterbi import Edge
+
 
 def log_add(*ps):
     m = max(ps)
@@ -39,6 +42,27 @@ def evaluate1(lm, test_data):
 
     log_likelihoods[-1] = lm.predict(test_data)[lm.eos]
     return sum(log_likelihoods)
+
+
+def evaluate2(lm, test_data):
+    nodes = list(xrange(len(test_data) + 1))
+    incoming_edges = defaultdict(set)
+
+    histories = []
+    heapq.heappush(histories, (0, ''))
+    
+    while len(histories) > 0:
+        start, hist = heapq.heappop(histories)
+
+        if start < len(test_data):
+            predictions = lm.predict(hist)
+            for pred, log_p in get_consistent_predictions(predictions, test_data[start:]):
+                end = start + len(pred)
+                incoming_edges[nodes[end]].add(Edge(start, end, log_p))
+                new_hist = hist + pred
+                heapq.heappush(histories, (len(new_hist), new_hist))
+
+    return nodes, incoming_edges
 
 
 def main():
